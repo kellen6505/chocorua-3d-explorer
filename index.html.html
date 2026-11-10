@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Mount Chocorua 3D Trail Explorer</title>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet"/>
+<style>
+:root{--bg:#101916;--panel:#17231f;--panel2:#202f29;--ink:#eef5ef;--muted:#aabbb0;--line:#35473e;--accent:#c8e6c9}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 Inter,system-ui,Segoe UI,Arial,sans-serif}
+header{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid var(--line);background:#111b17}
+.brand{font-size:16px;font-weight:750;letter-spacing:.02em}.brand small{display:block;color:var(--muted);font-size:11px;font-weight:450}
+.actions{display:flex;gap:8px;align-items:center}button,select{background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 11px;cursor:pointer;font:inherit}button:hover{border-color:#91b59b}button.active{background:#294638;border-color:#8fb69b}
+main{height:calc(100vh - 64px);display:grid;grid-template-columns:330px 1fr;min-height:520px}
+aside{overflow:auto;background:var(--panel);border-right:1px solid var(--line);padding:15px}
+h2{font-size:14px;margin:0 0 9px}h3{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:18px 0 8px}
+.sub{color:var(--muted);font-size:12px}.notice{padding:10px;border:1px solid #76653b;background:#342d1c;color:#f2e4b8;border-radius:9px;font-size:12px;margin:12px 0}
+.trail{display:flex;align-items:flex-start;gap:9px;padding:9px 0;border-bottom:1px solid #2a3932}.trail input{margin-top:4px;accent-color:#9bc4a4}.swatch{width:9px;height:28px;border-radius:5px;flex:none}.trail label{flex:1;cursor:pointer}.trail strong{display:block;font-size:13px}.trail small{display:block;color:var(--muted);font-size:11px}
+#map{position:relative;min-width:0;min-height:0;background:#24372f}.maplibregl-ctrl-group{background:#18241f!important}.maplibregl-ctrl button{background-color:#18241f!important}
+#status{position:absolute;z-index:3;left:12px;top:12px;background:#101916e8;border:1px solid #4b6255;border-radius:8px;padding:8px 10px;font-size:12px;max-width:min(420px,calc(100% - 24px))}
+#detail{position:absolute;z-index:4;right:14px;top:14px;width:min(330px,calc(100% - 28px));max-height:calc(100% - 28px);overflow:auto;background:#14211df2;border:1px solid #51685b;border-radius:12px;padding:14px;display:none;box-shadow:0 12px 40px #0008}
+#detail .close{float:right}.metric{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.metric div{background:#213129;padding:8px;border-radius:8px}.metric b{display:block;font-size:16px}.metric span{font-size:10px;color:var(--muted);text-transform:uppercase}
+.legend{display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--muted)}.legend span{display:flex;align-items:center;gap:4px}.dot{width:8px;height:8px;border-radius:50%}
+.profile{width:100%;height:95px;background:#1d2c25;border-radius:8px;margin-top:10px}
+#foot{font-size:11px;color:var(--muted);margin-top:12px}
+@media(max-width:760px){main{grid-template-columns:1fr;grid-template-rows:44vh 1fr;height:auto;min-height:calc(100vh - 64px)}aside{grid-row:2;max-height:none;border-right:0;border-top:1px solid var(--line)}#map{grid-row:1;min-height:360px}header{padding:0 10px}.actions button{padding:7px 8px;font-size:11px}}
+</style>
+</head>
+<body>
+<header><div class="brand">MOUNT CHOCORUA <small>3D terrain & trail explorer · New Hampshire</small></div><div class="actions"><button id="reset">Reset view</button><button id="terrain" class="active">3D terrain</button><button id="satellite">Satellite</button></div></header>
+<main>
+<aside>
+<h2>Explore the trail network</h2><div class="sub">Toggle trail overlays, select a trail for details, or combine segments into a route.</div>
+<div class="notice"><b>Data integrity:</b> terrain and satellite layers are streamed from public map services. Trail lines are community-mapped OpenStreetMap geometry where available—not an official survey. Missing geometry is not fabricated. Distances and gains below are published trail-guide figures where cited; they are not automatically computed from linework.</div>
+<h3>Trail overlays</h3>
+<div id="trails"></div>
+<h3>Build a summit route</h3>
+<div class="sub">Select multiple trails above to display them together. This highlights the chosen segments; it does not automatically prove that every selected segment connects.</div>
+<div style="display:flex;gap:8px;margin-top:8px"><button id="clear">Clear selection</button><button id="showall">Show all mapped</button></div>
+<h3>Map legend</h3><div class="legend"><span><i class="dot" style="background:#f4d35e"></i> Summit</span><span><i class="dot" style="background:#e7a75e"></i> Parking / trailhead</span><span><i class="dot" style="background:#fff"></i> Junction (OSM)</span></div>
+<div id="foot">Map center: Mount Chocorua · 43.9543, -71.2732 · Summit elevation: 3,490 ft (1,064 m). Rotate by dragging with right mouse button or Ctrl+drag; tilt/zoom with mouse or touch.</div>
+</aside>
+<section id="map"><div id="status">Loading terrain and OpenStreetMap trail geometry…</div><div id="detail"><button class="close" id="close">Close</button><div id="detailBody"></div></div></section>
+</main>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+const trails=[
+{name:"Piper Trail",color:"#ff6b6b",distance:"4.3 mi one-way",gain:"2,700 ft",difficulty:"Strenuous",head:"NH Route 16 / Davies General Store area",desc:"Popular eastern approach with long open-ledge sections. CLC documents 4.3 miles and about 2,700 ft gain to the summit. Geometry shown only where OSM has mapped it.",source:"Chocorua Lake Conservancy",url:"https://www.chocorualake.org/piper-trail",key:["piper"]},
+{name:"Liberty Trail",color:"#4ecdc4",distance:"3.9 mi to summit via Brook",gain:"2,600 ft",difficulty:"Moderate–strenuous",head:"Paugus Mill Road parking",desc:"Historic bridle-path approach. The documented route reaches the Brook Trail junction at about 3.6 mi, then continues roughly 0.2 mi to the summit.",source:"Chocorua Lake Conservancy",url:"https://www.chocorualake.org/liberty-trail",key:["liberty"]},
+{name:"Brook Trail",color:"#a78bfa",distance:"3.6 mi one-way",gain:"2,600 ft",difficulty:"Strenuous",head:"Paugus Mill Road parking",desc:"Steeper approach with ledges and exposed upper terrain; joins Liberty Trail near the summit. CLC warns that ledges can be hazardous when wet or icy.",source:"Chocorua Lake Conservancy",url:"https://www.chocorualake.org/brook-trail",key:["brook"]},
+{name:"Champney Falls Trail",color:"#f4a261",distance:"3.8 mi to summit",gain:"2,250 ft",difficulty:"Strenuous",head:"Champney Falls parking, Kancamagus Highway (NH-112)",desc:"Passes Champney and Pitcher Falls loop, climbs switchbacks and joins Piper Trail near the summit.",source:"Chocorua Lake Conservancy",url:"https://www.chocorualake.org/champney-falls-trail",key:["champney"]},
+{name:"Bolles Trail",color:"#e9c46a",distance:"Varies by segment",gain:"Not published here",difficulty:"Moderate / connector",head:"Paugus Mill Road or Kancamagus Highway",desc:"Historic valley connector between the Paugus Mill Road area and the Kancamagus Highway. Often used with Bee Line for a loop.",source:"Chocorua Lake Conservancy",url:"https://www.chocorualake.org/bolles-trail",key:["bolles"]},
+{name:"Hammond Trail",color:"#90be6d",distance:"3.0 mi to Liberty junction",gain:"2,000 ft",difficulty:"Strenuous",head:"Scott Road parking",desc:"Climbs Bald Mountain and follows the south ridge toward the Liberty Trail junction.",source:"Chocorua Lake Conservancy",url:"https://www.chocorualake.org/hammond-trail",key:["hammond"]},
+{name:"Bee Line Trail",color:"#f72585",distance:"Not independently verified",gain:"Not independently verified",difficulty:"Steep connector",head:"Brook / Liberty junction area",desc:"A steep connector used in summit loop options. Current exact linework and independent trail statistics require confirmation against a current trail map.",source:"CLC trail listing / USFS loop description",url:"https://www.chocorualake.org/hike-chocorua",key:["bee line","beeline"]},
+{name:"Middle Sister Trail",color:"#4895ef",distance:"Varies by approach",gain:"Not independently verified",difficulty:"Moderate–strenuous",head:"Champney Falls / Middle Sister cutoff area",desc:"Connects the Champney Falls approach with the Three Sisters area. Check current map and junctions before relying on this line.",source:"Chocorua Lake Conservancy",url:"https://www.chocorualake.org/hike-chocorua",key:["middle sister"]},
+{name:"Nickerson Ledge Trail",color:"#b8c0ff",distance:"1.2 mi to Piper junction (Piper guide milestone)",gain:"550 ft (Piper guide milestone)",difficulty:"Moderate",head:"Piper Trail network",desc:"A side route/connector to Nickerson Ledge. The figures shown are the Piper guide's distance and gain to the junction, not a complete standalone trail statistic.",source:"Chocorua Lake Conservancy",url:"https://www.chocorualake.org/piper-trail",key:["nickerson"]},
+{name:"Weetamoo Trail",color:"#caffbf",distance:"Not independently verified",gain:"Not independently verified",difficulty:"Connector",head:"Piper / Hammond trail network",desc:"A connector in the wider Chocorua network. Exact geometry and standalone statistics are not asserted here.",source:"Chocorua Lake Conservancy",url:"https://www.chocorualake.org/hike-chocorua",key:["weetamoo"]},
+{name:"Carter Ledge Trail",color:"#ffadad",distance:"Not independently verified",gain:"Not independently verified",difficulty:"Moderate–strenuous",head:"Carter Ledge area",desc:"Trail in the wider Mount Chocorua network. Consult current local maps for exact connections and trail condition.",source:"Chocorua Lake Conservancy",url:"https://www.chocorualake.org/hike-chocorua",key:["carter ledge"]},
+{name:"Old Paugus Trail",color:"#ffd6a5",distance:"Not independently verified",gain:"Not independently verified",difficulty:"Not rated",head:"Mount Paugus / Chocorua network",desc:"Listed in the Conservancy's trail descriptions. Not all segments necessarily lead to the Chocorua summit.",source:"Chocorua Lake Conservancy",url:"https://www.chocorualake.org/hike-chocorua",key:["old paugus"]}
+];
+const trailEl=document.getElementById('trails');
+trails.forEach((t,i)=>{let d=document.createElement('div');d.className='trail';d.innerHTML=`<input type="checkbox" id="t${i}" checked><i class="swatch" style="background:${t.color}"></i><label for="t${i}"><strong>${t.name}</strong><small>${t.distance} · ${t.difficulty}</small></label>`;trailEl.appendChild(d);d.querySelector('input').addEventListener('change',()=>setVisibility(i,d.querySelector('input').checked));d.querySelector('label').addEventListener('click',e=>{if(e.target.tagName!=='INPUT')showDetail(t)});});
+const map=new maplibregl.Map({container:'map',center:[-71.2732,43.9543],zoom:13.2,pitch:62,bearing:-25,antialias:true,style:{version:8,sources:{
+sat:{type:'raster',tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,attribution:'Esri World Imagery'},
+dem:{type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],tileSize:256,encoding:'terrarium',maxzoom:15,attribution:'AWS Terrain Tiles / Terrarium'},
+osm:{type:'vector',url:'https://demotiles.maplibre.org/tiles/tiles.json'}
+},layers:[{id:'satellite',type:'raster',source:'sat'},{id:'hillshade',type:'hillshade',source:'dem',paint:{'hillshade-exaggeration':0.45}}]},maxPitch:85});
+map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-right');map.addControl(new maplibregl.ScaleControl({unit:'imperial'}),'bottom-left');
+map.on('style.load',()=>{map.setTerrain({source:'dem',exaggeration:1.35});map.setSky({ 'sky-color':'#9bb8c8','horizon-color':'#d8e1dc','fog-color':'#d8e1dc','sky-horizon-blend':0.5,'horizon-fog-blend':0.7,'fog-ground-blend':0.2,'atmosphere-blend':0.5});});
+function setVisibility(i,on){let id='trail-'+i;if(map.getLayer(id))map.setLayoutProperty(id,'visibility',on?'visible':'none');}
+function showDetail(t){document.getElementById('detail').style.display='block';document.getElementById('detailBody').innerHTML=`<div style="color:${t.color};font-weight:800;font-size:11px;text-transform:uppercase">Trail information</div><h2 style="font-size:20px;margin:5px 0">${t.name}</h2><div class="metric"><div><b>${t.distance}</b><span>Published distance</span></div><div><b>${t.gain}</b><span>Elevation gain</span></div><div><b>${t.difficulty}</b><span>Difficulty</span></div><div><b>OSM</b><span>Geometry source</span></div></div><p>${t.desc}</p><p class="sub"><b>Trailhead:</b> ${t.head}</p><p class="sub">Source: ${t.source}</p><a style="color:#b8e0c1" target="_blank" rel="noopener" href="${t.url}">Open source trail guide ↗</a><canvas class="profile" id="profile" width="300" height="95"></canvas><div class="sub">Elevation profile: no continuous, verified track elevation profile is supplied for this trail in this demo. The published distance/gain values above are guide figures, not DEM-derived measurements.</div>`;}
+document.getElementById('close').onclick=()=>document.getElementById('detail').style.display='none';
+document.getElementById('reset').onclick=()=>map.flyTo({center:[-71.2732,43.9543],zoom:13.2,pitch:62,bearing:-25,duration:1300});
+document.getElementById('terrain').onclick=()=>{map.setTerrain({source:'dem',exaggeration:1.35});document.getElementById('terrain').classList.add('active')};
+document.getElementById('satellite').onclick=()=>{map.setTerrain(null);document.getElementById('terrain').classList.remove('active')};
+document.getElementById('clear').onclick=()=>trails.forEach((t,i)=>{document.getElementById('t'+i).checked=false;setVisibility(i,false)});
+document.getElementById('showall').onclick=()=>trails.forEach((t,i)=>{document.getElementById('t'+i).checked=true;setVisibility(i,true)});
+const summit={type:'Feature',geometry:{type:'Point',coordinates:[-71.2732,43.9543]},properties:{name:'Mount Chocorua summit · 3,490 ft'}};
+map.on('load',async()=>{
+ map.addSource('summit',{type:'geojson',data:summit});map.addLayer({id:'summit-point',type:'circle',source:'summit',paint:{'circle-radius':8,'circle-color':'#f4d35e','circle-stroke-width':2,'circle-stroke-color':'#1a211d'}});map.addLayer({id:'summit-label',type:'symbol',source:'summit',layout:{'text-field':'▲ SUMMIT · 3,490 FT','text-size':12,'text-offset':[0,1.5]},paint:{'text-color':'#fff2a8','text-halo-color':'#17231f','text-halo-width':2}});
+ const status=document.getElementById('status');
+ try{
+  const bbox='43.91,-71.34,44.00,-71.20';
+  const q=`[out:json][timeout:35];(way["highway"~"path|footway|track"]( ${bbox});way["route"="hiking"]( ${bbox});node["amenity"="parking"]( ${bbox});node["highway"="trailhead"]( ${bbox}););out geom tags;`;
+  const r=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',body:'data='+encodeURIComponent(q)});
+  if(!r.ok)throw new Error('Overpass returned '+r.status);
+  const data=await r.json();
+  const features=[];
+  data.elements.filter(e=>e.type==='node'&&(e.tags?.amenity==='parking'||e.tags?.highway==='trailhead')).forEach(n=>{
+   const el=document.createElement('div');el.style.cssText='width:13px;height:13px;border-radius:50%;background:#e7a75e;border:2px solid #fff;box-shadow:0 1px 6px #000';
+   new maplibregl.Marker({element:el}).setLngLat([n.lon,n.lat]).setPopup(new maplibregl.Popup({offset:12}).setHTML(`<b>${n.tags.name|| (n.tags.amenity==='parking'?'Mapped parking':'Mapped trailhead')}</b><br><small>OpenStreetMap feature; verify access and current parking rules.</small>`)).addTo(map);
+  });
+  data.elements.filter(e=>e.type==='way'&&e.geometry?.length>1).forEach(e=>{let p=e.tags||{};features.push({type:'Feature',id:e.id,geometry:{type:'LineString',coordinates:e.geometry.map(x=>[x.lon,x.lat])},properties:{name:p.name||p.ref||p.highway||'Unnamed mapped path',tags:JSON.stringify(p)}})});
+  map.addSource('osm-trails',{type:'geojson',data:{type:'FeatureCollection',features}});
+  trails.forEach((t,i)=>{
+   const expr=['any',...t.key.map(k=>['!=',['index-of',k,['downcase',['get','name']]],-1])];
+   map.addLayer({id:'trail-'+i,type:'line',source:'osm-trails',filter:expr,layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':t.color,'line-width':4,'line-opacity':0.94}});
+   map.setLayoutProperty('trail-'+i,'visibility','visible');
+  });
+  map.addLayer({id:'osm-trails-other',type:'line',source:'osm-trails',filter:['all',['==',['get','name'],''],],paint:{'line-color':'#a9b3ac','line-width':1.4,'line-opacity':0.5}});
+  map.on('click',e=>{const fs=map.queryRenderedFeatures(e.point,{layers:trails.map((_,i)=>'trail-'+i)});if(fs.length){let n=fs[0].layer.id.split('-')[1];showDetail(trails[+n]);}});
+  status.textContent=`Loaded ${features.length} mapped OSM path segments. Trail name matching is best-effort; unmapped or differently named segments may be absent.`;
+ }catch(err){status.textContent='Could not load live OSM trail geometry ('+err.message+'). Terrain remains available; consult linked official trail guides for routes.';}
+ // parking/trailhead markers: only summit has precise point in this build; do not invent trailhead coordinates.
+});
+</script>
+</body></html>
